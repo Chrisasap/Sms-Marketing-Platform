@@ -70,8 +70,8 @@ export default function Campaigns() {
   const { data: campaigns = [], isLoading, error } = useQuery<Campaign[]>({
     queryKey: ["campaigns"],
     queryFn: async () => {
-      const res = await api.get("/campaigns");
-      return res.data;
+      const res = await api.get("/campaigns/");
+      return res.data.campaigns ?? res.data;
     },
   });
 

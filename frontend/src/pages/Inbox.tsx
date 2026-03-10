@@ -57,8 +57,8 @@ export default function Inbox() {
   const { data: conversations = [], error } = useQuery<Conversation[]>({
     queryKey: ["conversations"],
     queryFn: async () => {
-      const res = await api.get("/inbox/conversations");
-      return res.data;
+      const res = await api.get("/inbox/");
+      return res.data.conversations ?? res.data;
     },
   });
 
@@ -69,8 +69,8 @@ export default function Inbox() {
     queryKey: ["messages", activeConvo],
     queryFn: async () => {
       if (!activeConvo) return [];
-      const res = await api.get(`/inbox/conversations/${activeConvo}/messages`);
-      return res.data;
+      const res = await api.get(`/inbox/${activeConvo}/messages`);
+      return res.data.messages ?? res.data;
     },
     enabled: !!activeConvo,
   });
@@ -100,7 +100,7 @@ export default function Inbox() {
     const text = messageInput;
     setMessageInput("");
     try {
-      await api.post(`/inbox/conversations/${activeConvo}/reply`, { text });
+      await api.post(`/inbox/${activeConvo}/reply`, { body: text });
       queryClient.invalidateQueries({ queryKey: ["messages", activeConvo] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       toast.success("Message sent");

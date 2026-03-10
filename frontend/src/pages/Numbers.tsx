@@ -103,17 +103,18 @@ function BuyNumbersModal({ onClose }: { onClose: () => void }) {
   const { data: available = [], isLoading: searching, refetch } = useQuery<AvailableNumber[]>({
     queryKey: ["available-numbers", areaCode, searchType],
     queryFn: async () => {
-      const res = await api.get("/numbers/available", {
-        params: { area_code: areaCode, type: searchType },
+      const res = await api.post("/numbers/search", {
+        area_code: areaCode,
+        type: searchType,
       });
-      return res.data;
+      return res.data.available_numbers ?? res.data;
     },
     enabled: false,
   });
 
   const purchaseMutation = useMutation({
     mutationFn: async (number: string) => {
-      const res = await api.post("/numbers/purchase", { number });
+      const res = await api.post("/numbers/order", { numbers: [number] });
       return res.data;
     },
     onSuccess: () => {
@@ -296,8 +297,8 @@ export default function Numbers() {
   const { data: numbers = [], isLoading, error } = useQuery<PhoneNumber[]>({
     queryKey: ["phone-numbers"],
     queryFn: async () => {
-      const res = await api.get("/numbers");
-      return res.data;
+      const res = await api.get("/numbers/");
+      return res.data.numbers ?? res.data;
     },
   });
 

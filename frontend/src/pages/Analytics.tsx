@@ -119,7 +119,7 @@ export default function Analytics() {
     queryKey: ["analytics", dateRange],
     queryFn: async () => {
       try {
-        const res = await api.get("/analytics", { params: { range: dateRange } });
+        const res = await api.get("/analytics/volume", { params: { period: dateRange } });
         return res.data as { volume: typeof volumeData } | null;
       } catch {
         // Fallback to static data if API not available

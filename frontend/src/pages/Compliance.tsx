@@ -142,7 +142,7 @@ export default function Compliance() {
     queryKey: ["compliance-brands"],
     queryFn: async () => {
       const res = await api.get("/compliance/brands");
-      return res.data;
+      return res.data.brands ?? res.data;
     },
   });
 
@@ -151,7 +151,7 @@ export default function Compliance() {
     queryKey: ["compliance-campaigns"],
     queryFn: async () => {
       const res = await api.get("/compliance/campaigns");
-      return res.data;
+      return res.data.campaigns ?? res.data;
     },
   });
 
@@ -160,7 +160,7 @@ export default function Compliance() {
     queryKey: ["compliance-optouts"],
     queryFn: async () => {
       const res = await api.get("/compliance/opt-outs");
-      return res.data;
+      return res.data.opt_outs ?? res.data;
     },
   });
 

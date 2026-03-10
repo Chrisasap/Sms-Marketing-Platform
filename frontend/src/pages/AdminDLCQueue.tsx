@@ -79,7 +79,7 @@ export default function AdminDLCQueue() {
       const params =
         filter === "all" ? {} : { status: filter };
       const res = await api.get("/admin/dlc-queue", { params });
-      setItems(res.data);
+      setItems(res.data.applications ?? res.data);
     } catch {
       toast.error("Failed to load DLC queue");
     } finally {

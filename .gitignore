@@ -40,3 +40,4 @@ redis_data/
 htmlcov/
 .coverage
 coverage/
+.claude/

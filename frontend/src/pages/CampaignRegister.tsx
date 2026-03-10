@@ -158,7 +158,7 @@ export default function CampaignRegister() {
     const fetchBrands = async () => {
       try {
         const res = await api.get("/compliance/brands");
-        setBrands(res.data);
+        setBrands(res.data.brands ?? res.data);
       } catch {
         toast.error("Failed to load brands");
       } finally {

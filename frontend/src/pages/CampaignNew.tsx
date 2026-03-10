@@ -645,7 +645,7 @@ export default function CampaignNew() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post("/campaigns", state);
+      const res = await api.post("/campaigns/", state);
       return res.data;
     },
     onSuccess: () => {

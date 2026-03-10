@@ -9,6 +9,15 @@ const api = axios.create({
   },
 });
 
+// Attach Bearer token from auth store to every request
+api.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().token;
+  if (token && token !== "authenticated") {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 let isRefreshing = false;
 
 api.interceptors.response.use(

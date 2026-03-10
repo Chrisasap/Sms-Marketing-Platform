@@ -22,7 +22,7 @@ export default function Dashboard() {
   const { error } = useQuery({
     queryKey: ["dashboard"],
     queryFn: async () => {
-      const res = await api.get("/dashboard");
+      const res = await api.get("/analytics/dashboard");
       return res.data;
     },
     retry: 1,

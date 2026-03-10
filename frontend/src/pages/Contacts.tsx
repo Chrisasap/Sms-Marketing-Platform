@@ -73,8 +73,8 @@ export default function Contacts() {
   const { data: contacts = [], isLoading, error } = useQuery<Contact[]>({
     queryKey: ["contacts"],
     queryFn: async () => {
-      const res = await api.get("/contacts");
-      return res.data;
+      const res = await api.get("/contacts/");
+      return res.data.contacts ?? res.data;
     },
   });
 

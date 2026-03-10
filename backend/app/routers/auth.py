@@ -26,6 +26,7 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     TokenRefreshResponse,
+    RefreshRequest,
     PasswordResetRequest,
     PasswordResetConfirm,
     MFASetupResponse,
@@ -203,6 +204,7 @@ async def login(
 
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
             "id": str(user.id),
@@ -285,6 +287,7 @@ async def mfa_validate(
 
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
             "id": str(user.id),
@@ -297,14 +300,16 @@ async def mfa_validate(
     }
 
 
-@router.post("/refresh", response_model=TokenRefreshResponse)
+@router.post("/refresh")
 async def refresh(
     request: Request,
     response: Response,
+    body: RefreshRequest = RefreshRequest(),
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange a valid refresh token for a new access token."""
-    token = request.cookies.get("refresh_token")
+    """Exchange a valid refresh token for a new access token.
+    Accepts refresh_token from request body or httpOnly cookie."""
+    token = body.refresh_token or request.cookies.get("refresh_token")
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -341,7 +346,7 @@ async def refresh(
         samesite="lax",
         max_age=900,
     )
-    return TokenRefreshResponse(access_token=new_access)
+    return {"access_token": new_access, "token_type": "bearer"}
 
 
 @router.post("/logout")

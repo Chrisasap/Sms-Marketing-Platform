@@ -37,6 +37,10 @@ class TokenRefreshResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
+
 class PasswordResetRequest(BaseModel):
     email: EmailStr
 

@@ -10,7 +10,7 @@ export default function Register() {
   const [form, setForm] = useState({ first_name: "", last_name: "", company_name: "", email: "", password: "" });
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { setUser, setToken } = useAuthStore();
+  const { setUser, setToken, setRefreshToken } = useAuthStore();
 
   const update = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -24,6 +24,7 @@ export default function Register() {
       // Auto-login after successful registration
       const loginRes = await api.post("/auth/login", { email: form.email, password: form.password });
       setToken(loginRes.data.access_token ?? "authenticated");
+      if (loginRes.data.refresh_token) setRefreshToken(loginRes.data.refresh_token);
       setUser(loginRes.data.user ?? null);
       toast.success("Account created successfully");
       navigate("/");

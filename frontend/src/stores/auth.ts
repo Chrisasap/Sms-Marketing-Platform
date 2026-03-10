@@ -14,10 +14,12 @@ interface User {
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
+  setRefreshToken: (refreshToken: string | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
 }
@@ -27,12 +29,14 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
+      refreshToken: null,
       isAuthenticated: false,
       isLoading: true,
       setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
       setToken: (token) => set({ token, isAuthenticated: !!token }),
+      setRefreshToken: (refreshToken) => set({ refreshToken }),
       setLoading: (isLoading) => set({ isLoading }),
-      logout: () => set({ user: null, token: null, isAuthenticated: false }),
+      logout: () => set({ user: null, token: null, refreshToken: null, isAuthenticated: false }),
     }),
     { name: "blastwave-auth" }
   )

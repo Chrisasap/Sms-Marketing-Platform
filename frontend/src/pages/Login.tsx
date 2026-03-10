@@ -12,7 +12,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { setUser, setToken } = useAuthStore();
+  const { setUser, setToken, setRefreshToken } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,6 +21,7 @@ export default function Login() {
     try {
       const res = await api.post("/auth/login", { email, password });
       setToken(res.data.access_token ?? "authenticated");
+      if (res.data.refresh_token) setRefreshToken(res.data.refresh_token);
       setUser(res.data.user ?? null);
       toast.success("Signed in successfully");
       navigate("/");

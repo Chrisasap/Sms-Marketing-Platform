@@ -1,0 +1,150 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: blastwave
+      POSTGRES_PASSWORD: blastwave
+      POSTGRES_DB: blastwave
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blastwave"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://blastwave:blastwave@db:5432/blastwave
+      DATABASE_URL_SYNC: postgresql://blastwave:blastwave@db:5432/blastwave
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://blastwave:blastwave@db:5432/blastwave
+      DATABASE_URL_SYNC: postgresql://blastwave:blastwave@db:5432/blastwave
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=4 -Q default,send,import,ai
+
+  worker-ai:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://blastwave:blastwave@db:5432/blastwave
+      DATABASE_URL_SYNC: postgresql://blastwave:blastwave@db:5432/blastwave
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2 -Q ai
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://blastwave:blastwave@db:5432/blastwave
+      DATABASE_URL_SYNC: postgresql://blastwave:blastwave@db:5432/blastwave
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.celery_app beat --loglevel=info
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://blastwave:blastwave@db:5432/blastwave
+      DATABASE_URL_SYNC: postgresql://blastwave:blastwave@db:5432/blastwave
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: alembic upgrade head
+    profiles:
+      - migrate
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    command: npm run dev -- --host 0.0.0.0
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - frontend
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+  redis_data:

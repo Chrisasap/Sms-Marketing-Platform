@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import GlassCard from "../components/ui/GlassCard";
+import SubmissionSuccess from "../components/ui/SubmissionSuccess";
 import toast from "react-hot-toast";
 import api from "../lib/api";
 
@@ -112,6 +113,7 @@ export default function BrandRegister() {
   const [currentStep, setCurrentStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const {
     register,
@@ -188,8 +190,7 @@ export default function BrandRegister() {
         stock_exchange: data.stockExchange || null,
         business_contact_email: data.businessContactEmail || null,
       });
-      toast.success("Brand registration submitted for admin review!");
-      navigate("/compliance");
+      setSubmitted(true);
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } } };
       toast.error(
@@ -201,6 +202,17 @@ export default function BrandRegister() {
   };
 
   const values = getValues();
+
+  if (submitted) {
+    return (
+      <SubmissionSuccess
+        title="Brand Registration Submitted!"
+        message="Our AI compliance system will analyze your brand registration to maximize approval chances. An admin will review it within 24 hours."
+        backLabel="Back to Compliance"
+        backPath="/compliance"
+      />
+    );
+  }
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>

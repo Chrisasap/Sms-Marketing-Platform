@@ -34,6 +34,7 @@ import AdminRevenue from "./pages/admin/AdminRevenue";
 import AdminSystem from "./pages/admin/AdminSystem";
 import AdminAuditLog from "./pages/admin/AdminAuditLog";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminTenantDetail from "./pages/admin/AdminTenantDetail";
 import type { ReactNode } from "react";
 
 const queryClient = new QueryClient({
@@ -82,7 +83,7 @@ export default function App() {
           <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/tenants" element={<AdminTenants />} />
-            <Route path="/admin/tenants/:id" element={<AdminTenants />} />
+            <Route path="/admin/tenants/:id" element={<AdminTenantDetail />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/dlc-queue" element={<AdminDLCQueueV2 />} />
             <Route path="/admin/dlc-analytics" element={<AdminDLCAnalytics />} />

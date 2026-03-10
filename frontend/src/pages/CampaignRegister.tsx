@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import GlassCard from "../components/ui/GlassCard";
+import SubmissionSuccess from "../components/ui/SubmissionSuccess";
 import toast from "react-hot-toast";
 import api from "../lib/api";
 
@@ -104,6 +105,7 @@ export default function CampaignRegister() {
   const [currentStep, setCurrentStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loadingBrands, setLoadingBrands] = useState(true);
 
@@ -221,8 +223,7 @@ export default function CampaignRegister() {
         privacy_policy_link: data.privacyPolicyLink || null,
         terms_and_conditions_link: data.termsAndConditionsLink || null,
       });
-      toast.success("Campaign registration submitted for admin review!");
-      navigate("/compliance");
+      setSubmitted(true);
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } } };
       toast.error(
@@ -235,6 +236,17 @@ export default function CampaignRegister() {
   };
 
   const values = getValues();
+
+  if (submitted) {
+    return (
+      <SubmissionSuccess
+        title="Campaign Registration Submitted!"
+        message="Our AI compliance system will analyze your campaign details to maximize approval chances. An admin will review it within 24 hours."
+        backLabel="Back to Compliance"
+        backPath="/compliance"
+      />
+    );
+  }
 
   const handleSubUsecaseToggle = (value: string) => {
     const current = getValues("subUsecases") || [];

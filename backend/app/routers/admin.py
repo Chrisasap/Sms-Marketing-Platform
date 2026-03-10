@@ -1053,10 +1053,43 @@ async def list_dlc_applications(
         tenant_result = await db.execute(tenant_q)
         tenant_names = {row[0]: row[1] for row in tenant_result.all()}
 
+    # Batch-fetch latest AI review score + verdict for all applications in this page
+    app_ids = [a.id for a in apps]
+    ai_reviews: dict[uuid.UUID, dict] = {}
+    if app_ids:
+        # Subquery: latest review per application (max created_at)
+        latest_subq = (
+            select(
+                AIReviewResult.dlc_application_id,
+                func.max(AIReviewResult.created_at).label("max_created"),
+            )
+            .where(AIReviewResult.dlc_application_id.in_(app_ids))
+            .group_by(AIReviewResult.dlc_application_id)
+            .subquery()
+        )
+        review_q = (
+            select(
+                AIReviewResult.dlc_application_id,
+                AIReviewResult.score,
+                AIReviewResult.verdict,
+            )
+            .join(
+                latest_subq,
+                (AIReviewResult.dlc_application_id == latest_subq.c.dlc_application_id)
+                & (AIReviewResult.created_at == latest_subq.c.max_created),
+            )
+        )
+        review_result = await db.execute(review_q)
+        for row in review_result.all():
+            ai_reviews[row[0]] = {"ai_score": row[1], "ai_verdict": row[2]}
+
     items = []
     for a in apps:
         data = DLCApplicationResponse.model_validate(a).model_dump(mode="json")
         data["tenant_name"] = tenant_names.get(a.tenant_id, "Unknown")
+        review_data = ai_reviews.get(a.id, {})
+        data["ai_score"] = review_data.get("ai_score")
+        data["ai_verdict"] = review_data.get("ai_verdict")
         items.append(data)
 
     return {

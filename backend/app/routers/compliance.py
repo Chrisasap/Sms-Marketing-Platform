@@ -134,6 +134,14 @@ async def apply_brand_registration(
     await db.commit()
     await db.refresh(application)
 
+    # Auto-trigger AI review now that the application is persisted
+    try:
+        from app.tasks.ai_dlc_review import run_ai_dlc_review
+        run_ai_dlc_review.delay(str(application.id))
+        logger.info("AI review task queued for brand application %s", application.id)
+    except Exception:
+        logger.exception("Failed to queue AI review task for brand application %s", application.id)
+
     return DLCApplicationResponse.model_validate(application)
 
 
@@ -281,6 +289,14 @@ async def apply_campaign_registration(
     await db.commit()
     await db.refresh(application)
 
+    # Auto-trigger AI review now that the application is persisted
+    try:
+        from app.tasks.ai_dlc_review import run_ai_dlc_review
+        run_ai_dlc_review.delay(str(application.id))
+        logger.info("AI review task queued for campaign application %s", application.id)
+    except Exception:
+        logger.exception("Failed to queue AI review task for campaign application %s", application.id)
+
     return DLCApplicationResponse.model_validate(application)
 
 
@@ -421,6 +437,50 @@ async def get_application(
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     return DLCApplicationResponse.model_validate(app)
+
+
+@router.get("/applications/{application_id}/review-status")
+async def get_application_review_status(
+    application_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get AI review status for a DLC application (tenant-scoped).
+
+    Returns a limited view of the AI review: score, verdict, and summary.
+    Detailed issues and enhanced fields are admin-only.
+    """
+    from app.models.ai_review_result import AIReviewResult
+
+    # Verify the application belongs to this tenant
+    app_result = await db.execute(
+        select(DLCApplication.id).where(
+            DLCApplication.id == application_id,
+            DLCApplication.tenant_id == user.tenant_id,
+        )
+    )
+    if not app_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Get the latest AI review result
+    review_result = await db.execute(
+        select(AIReviewResult)
+        .where(AIReviewResult.dlc_application_id == application_id)
+        .order_by(AIReviewResult.created_at.desc())
+        .limit(1)
+    )
+    review = review_result.scalar_one_or_none()
+
+    if not review:
+        return {"status": "pending"}
+
+    return {
+        "status": "completed",
+        "score": review.score,
+        "verdict": review.verdict,
+        "summary": review.summary,
+        "reviewed_at": review.created_at.isoformat() if review.created_at else None,
+    }
 
 
 # ==================== Compliance Dashboard ====================

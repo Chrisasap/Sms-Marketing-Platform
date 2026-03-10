@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column('owner_user_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('stripe_customer_id', sa.String(255), nullable=True),
         sa.Column('stripe_subscription_id', sa.String(255), nullable=True),
+        sa.Column('stripe_subscription_item_id', sa.String(255), nullable=True),
         sa.Column('plan_tier', sa.String(50), nullable=False, server_default='free_trial'),
         sa.Column('credit_balance', sa.Numeric(12, 4), nullable=False, server_default='0'),
         sa.Column('bandwidth_site_id', sa.String(255), nullable=True),

@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Waves,
-  ClipboardList,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -36,8 +35,9 @@ const navItems = [
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
   { icon: CreditCard, label: "Billing", path: "/settings/billing" },
   { icon: Settings, label: "Settings", path: "/settings" },
-  { icon: ClipboardList, label: "DLC Queue", path: "/admin/dlc-queue" },
 ];
+
+const adminItem = { icon: Shield, label: "Admin Panel", path: "/admin" };
 
 export default function Sidebar() {
   const { collapsed, toggle } = useSidebarStore();
@@ -70,12 +70,12 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
+        {navItems.map((navItem) => {
+          const isActive = location.pathname === navItem.path;
           return (
             <Link
-              key={item.path}
-              to={item.path}
+              key={navItem.path}
+              to={navItem.path}
               className={clsx(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
                 isActive
@@ -89,7 +89,7 @@ export default function Sidebar() {
                   className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-500 rounded-r-full"
                 />
               )}
-              <item.icon className={clsx("w-5 h-5 flex-shrink-0", isActive && "text-blue-400")} />
+              <navItem.icon className={clsx("w-5 h-5 flex-shrink-0", isActive && "text-blue-400")} />
               <AnimatePresence>
                 {!collapsed && (
                   <motion.span
@@ -98,13 +98,52 @@ export default function Sidebar() {
                     exit={{ opacity: 0 }}
                     className="text-sm font-medium whitespace-nowrap"
                   >
-                    {item.label}
+                    {navItem.label}
                   </motion.span>
                 )}
               </AnimatePresence>
             </Link>
           );
         })}
+
+        {/* Separator */}
+        <div className="my-3 mx-3 border-t border-white/10" />
+
+        {/* Admin Panel Link */}
+        {(() => {
+          const isActive = location.pathname.startsWith(adminItem.path);
+          return (
+            <Link
+              to={adminItem.path}
+              className={clsx(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
+                isActive
+                  ? "bg-rose-500/10 text-rose-400"
+                  : "text-gray-400 hover:text-white hover:bg-white/5"
+              )}
+            >
+              {isActive && (
+                <motion.div
+                  layoutId="activeNav"
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-rose-500 rounded-r-full"
+                />
+              )}
+              <adminItem.icon className={clsx("w-5 h-5 flex-shrink-0", isActive && "text-rose-400")} />
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.span
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="text-sm font-medium whitespace-nowrap"
+                  >
+                    {adminItem.label}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </Link>
+          );
+        })()}
       </nav>
 
       {/* Collapse toggle */}

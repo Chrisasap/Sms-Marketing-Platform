@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.tasks.scheduled_campaigns",
         "app.tasks.billing",
         "app.tasks.cleanup",
+        "app.tasks.ai_dlc_review",
     ],
 )
 

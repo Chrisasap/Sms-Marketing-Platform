@@ -22,6 +22,8 @@ from app.models.webhook_log import WebhookLog
 from app.models.billing_event import BillingEvent
 from app.models.dlc_application import DLCApplication
 from app.models.audit_log import AuditLog
+from app.models.ai_review_result import AIReviewResult
+from app.models.ai_review_prompt import AIReviewPrompt
 
 __all__ = [
     "Tenant",
@@ -50,4 +52,6 @@ __all__ = [
     "BillingEvent",
     "DLCApplication",
     "AuditLog",
+    "AIReviewResult",
+    "AIReviewPrompt",
 ]

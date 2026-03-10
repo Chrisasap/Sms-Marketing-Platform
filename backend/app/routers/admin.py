@@ -25,6 +25,9 @@ from app.models.dlc_application import DLCApplication
 from app.models.brand import Brand10DLC
 from app.models.campaign_10dlc import Campaign10DLC
 from app.models.audit_log import AuditLog
+from app.models.ai_review_result import AIReviewResult
+from app.models.ai_review_prompt import AIReviewPrompt
+from app.models.message import Message
 from app.schemas.compliance import DLCApplicationResponse, DLCReviewAction
 from app.services.auth import create_access_token
 from app.services.bandwidth import bandwidth_client, BandwidthError
@@ -652,6 +655,360 @@ async def system_health_check(
 
 
 # ---------------------------------------------------------------------------
+# GET /analytics/overview -- Real-time KPI snapshot
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/overview")
+async def analytics_overview(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Real-time platform KPI snapshot for the admin dashboard."""
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # Tenant counts
+    total_tenants = (await db.execute(
+        select(func.count(Tenant.id)).where(Tenant.deleted_at.is_(None))
+    )).scalar() or 0
+
+    active_tenants_24h = (await db.execute(
+        select(func.count(func.distinct(User.tenant_id))).where(User.last_login_at >= now - timedelta(hours=24))
+    )).scalar() or 0
+
+    new_tenants_7d = (await db.execute(
+        select(func.count(Tenant.id)).where(Tenant.deleted_at.is_(None), Tenant.created_at >= week_ago)
+    )).scalar() or 0
+
+    new_tenants_30d = (await db.execute(
+        select(func.count(Tenant.id)).where(Tenant.deleted_at.is_(None), Tenant.created_at >= month_ago)
+    )).scalar() or 0
+
+    # User counts
+    total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    active_users_24h = (await db.execute(
+        select(func.count(User.id)).where(User.last_login_at >= now - timedelta(hours=24))
+    )).scalar() or 0
+
+    # Messages
+    messages_24h = (await db.execute(
+        select(func.count(CampaignMessage.id)).where(CampaignMessage.sent_at >= now - timedelta(hours=24))
+    )).scalar() or 0
+
+    messages_7d = (await db.execute(
+        select(func.count(CampaignMessage.id)).where(CampaignMessage.sent_at >= week_ago)
+    )).scalar() or 0
+
+    messages_30d = (await db.execute(
+        select(func.count(CampaignMessage.id)).where(CampaignMessage.sent_at >= month_ago)
+    )).scalar() or 0
+
+    # Revenue (MRR approximation from this month's billing)
+    mrr = float((await db.execute(
+        select(func.coalesce(func.sum(BillingEvent.total_cost), 0)).where(BillingEvent.created_at >= month_start)
+    )).scalar() or 0)
+
+    # DLC Queue
+    dlc_pending = (await db.execute(
+        select(func.count(DLCApplication.id)).where(DLCApplication.status == "pending_review")
+    )).scalar() or 0
+
+    # System health summary
+    health_status = "healthy"
+    try:
+        await db.execute(select(func.now()))
+    except Exception:
+        health_status = "degraded"
+
+    return {
+        "total_tenants": total_tenants,
+        "active_tenants_24h": active_tenants_24h,
+        "new_tenants_7d": new_tenants_7d,
+        "new_tenants_30d": new_tenants_30d,
+        "total_users": total_users,
+        "active_users_24h": active_users_24h,
+        "messages_24h": messages_24h,
+        "messages_7d": messages_7d,
+        "messages_30d": messages_30d,
+        "mrr": mrr,
+        "dlc_queue_pending": dlc_pending,
+        "system_health": health_status,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/messages -- Message volume time series
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/messages")
+async def analytics_messages(
+    period: str = Query("30d", regex="^(7d|30d|90d)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Message volume time series for charts."""
+    days = {"7d": 7, "30d": 30, "90d": 90}[period]
+    start = datetime.now(timezone.utc) - timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            func.date_trunc("day", CampaignMessage.sent_at).label("day"),
+            func.count(CampaignMessage.id).label("count"),
+        )
+        .where(CampaignMessage.sent_at >= start)
+        .group_by("day")
+        .order_by("day")
+    )
+    rows = result.all()
+
+    return {
+        "period": period,
+        "data": [{"date": row[0].isoformat() if row[0] else None, "count": row[1]} for row in rows],
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/revenue -- Revenue time series
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/revenue")
+async def analytics_revenue(
+    period: str = Query("12m", regex="^(3m|6m|12m)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Monthly revenue time series."""
+    months = {"3m": 3, "6m": 6, "12m": 12}[period]
+    start = datetime.now(timezone.utc) - timedelta(days=months * 30)
+
+    result = await db.execute(
+        select(
+            func.date_trunc("month", BillingEvent.created_at).label("month"),
+            func.coalesce(func.sum(BillingEvent.total_cost), 0).label("revenue"),
+        )
+        .where(BillingEvent.created_at >= start)
+        .group_by("month")
+        .order_by("month")
+    )
+    rows = result.all()
+
+    return {
+        "period": period,
+        "data": [{"month": row[0].isoformat() if row[0] else None, "revenue": float(row[1])} for row in rows],
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/tenants/growth -- Tenant signup trend
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/tenants/growth")
+async def analytics_tenant_growth(
+    period: str = Query("90d", regex="^(30d|90d|365d)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Tenant signup trend over time."""
+    days = {"30d": 30, "90d": 90, "365d": 365}[period]
+    start = datetime.now(timezone.utc) - timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            func.date_trunc("day", Tenant.created_at).label("day"),
+            func.count(Tenant.id).label("count"),
+        )
+        .where(Tenant.created_at >= start, Tenant.deleted_at.is_(None))
+        .group_by("day")
+        .order_by("day")
+    )
+    rows = result.all()
+
+    return {
+        "period": period,
+        "data": [{"date": row[0].isoformat() if row[0] else None, "count": row[1]} for row in rows],
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/compliance -- DLC approval analytics
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/compliance")
+async def analytics_compliance(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """10DLC compliance analytics: approval rates, AI metrics."""
+    total = (await db.execute(select(func.count(DLCApplication.id)))).scalar() or 0
+    approved = (await db.execute(
+        select(func.count(DLCApplication.id)).where(DLCApplication.status.in_(["approved", "submitted", "registered"]))
+    )).scalar() or 0
+    rejected = (await db.execute(
+        select(func.count(DLCApplication.id)).where(DLCApplication.status == "rejected")
+    )).scalar() or 0
+    pending = (await db.execute(
+        select(func.count(DLCApplication.id)).where(DLCApplication.status == "pending_review")
+    )).scalar() or 0
+
+    approval_rate = (approved / total * 100) if total > 0 else 0
+
+    # AI review metrics
+    total_ai_reviews = (await db.execute(
+        select(func.count(AIReviewResult.id)).where(AIReviewResult.verdict != "ERROR")
+    )).scalar() or 0
+    avg_ai_score = float((await db.execute(
+        select(func.coalesce(func.avg(AIReviewResult.score), 0)).where(AIReviewResult.verdict != "ERROR")
+    )).scalar() or 0)
+
+    return {
+        "total_submissions": total,
+        "total_approved": approved,
+        "total_rejected": rejected,
+        "total_pending": pending,
+        "approval_rate": round(approval_rate, 1),
+        "ai_metrics": {
+            "total_reviews": total_ai_reviews,
+            "avg_score": round(avg_ai_score, 1),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /activity-feed -- Recent platform events
+# ---------------------------------------------------------------------------
+
+@router.get("/activity-feed")
+async def activity_feed(
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Recent platform activity for the admin dashboard feed."""
+    result = await db.execute(
+        select(AuditLog)
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+    )
+    logs = result.scalars().all()
+
+    # Enrich with user emails
+    user_ids = list({l.user_id for l in logs if l.user_id})
+    user_emails = {}
+    if user_ids:
+        user_q = select(User.id, User.email).where(User.id.in_(user_ids))
+        user_result = await db.execute(user_q)
+        user_emails = {row[0]: row[1] for row in user_result.all()}
+
+    return {
+        "events": [
+            {
+                "id": str(l.id),
+                "action": l.action,
+                "resource_type": l.resource_type,
+                "resource_id": l.resource_id,
+                "user_email": user_emails.get(l.user_id, "system"),
+                "details": l.details,
+                "created_at": l.created_at.isoformat(),
+            }
+            for l in logs
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# AI Review Prompt Management (must be before {application_id} routes)
+# ---------------------------------------------------------------------------
+
+@router.get("/dlc-queue/ai-prompts")
+async def list_ai_prompts(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """List all AI review prompts."""
+    result = await db.execute(
+        select(AIReviewPrompt).order_by(AIReviewPrompt.prompt_type, AIReviewPrompt.version.desc())
+    )
+    prompts = result.scalars().all()
+
+    return {
+        "prompts": [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "prompt_type": p.prompt_type,
+                "system_prompt": p.system_prompt,
+                "model": p.model,
+                "temperature": p.temperature,
+                "is_active": p.is_active,
+                "version": p.version,
+                "created_at": p.created_at.isoformat(),
+            }
+            for p in prompts
+        ],
+    }
+
+
+@router.put("/dlc-queue/ai-prompts/{prompt_id}")
+async def update_ai_prompt(
+    prompt_id: uuid.UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Update an AI review prompt (creates a new version)."""
+    result = await db.execute(
+        select(AIReviewPrompt).where(AIReviewPrompt.id == prompt_id)
+    )
+    old_prompt = result.scalar_one_or_none()
+    if not old_prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    # Deactivate old prompt
+    old_prompt.is_active = False
+
+    # Create new version
+    new_prompt = AIReviewPrompt(
+        name=body.get("name", old_prompt.name),
+        prompt_type=old_prompt.prompt_type,
+        system_prompt=body.get("system_prompt", old_prompt.system_prompt),
+        model=body.get("model", old_prompt.model),
+        temperature=body.get("temperature", old_prompt.temperature),
+        is_active=True,
+        version=old_prompt.version + 1,
+        created_by=user.id,
+    )
+    db.add(new_prompt)
+
+    audit = AuditLog(
+        tenant_id=None,
+        user_id=user.id,
+        action="ai_prompt_updated",
+        resource_type="ai_review_prompt",
+        resource_id=str(old_prompt.id),
+        details={"old_version": old_prompt.version, "new_version": new_prompt.version},
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(new_prompt)
+
+    return {
+        "message": "Prompt updated (new version created)",
+        "prompt": {
+            "id": str(new_prompt.id),
+            "name": new_prompt.name,
+            "prompt_type": new_prompt.prompt_type,
+            "model": new_prompt.model,
+            "temperature": new_prompt.temperature,
+            "version": new_prompt.version,
+            "is_active": new_prompt.is_active,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # DLC Review Queue (superadmin only)
 # ---------------------------------------------------------------------------
 
@@ -766,6 +1123,163 @@ async def get_dlc_application_detail(
         },
         "brand": brand_data,
         "campaign": campaign_data,
+    }
+
+
+# ---------------------------------------------------------------------------
+# AI-Powered DLC Review Endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/dlc-queue/{application_id}/ai-review")
+async def trigger_ai_review(
+    application_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Trigger AI review of a DLC application. Returns 202 if queued."""
+    result = await db.execute(
+        select(DLCApplication).where(DLCApplication.id == application_id)
+    )
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Check for recent review (< 1 hour old)
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    existing = await db.execute(
+        select(AIReviewResult)
+        .where(
+            AIReviewResult.dlc_application_id == application_id,
+            AIReviewResult.created_at >= one_hour_ago,
+            AIReviewResult.verdict != "ERROR",
+        )
+        .order_by(AIReviewResult.created_at.desc())
+        .limit(1)
+    )
+    cached = existing.scalar_one_or_none()
+    if cached:
+        return {
+            "status": "cached",
+            "review": {
+                "id": str(cached.id),
+                "score": cached.score,
+                "verdict": cached.verdict,
+                "issues": cached.issues,
+                "enhanced_fields": cached.enhanced_fields,
+                "compliance_flags": cached.compliance_flags,
+                "summary": cached.summary,
+                "model_used": cached.model_used,
+                "tokens_used": cached.tokens_used,
+                "latency_ms": cached.latency_ms,
+                "created_at": cached.created_at.isoformat(),
+            },
+        }
+
+    # Enqueue AI review task
+    from app.tasks.ai_dlc_review import run_ai_dlc_review
+    task = run_ai_dlc_review.delay(str(application_id))
+
+    return {"status": "queued", "task_id": task.id}
+
+
+@router.get("/dlc-queue/{application_id}/ai-review")
+async def get_ai_review(
+    application_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Get the latest AI review result for an application."""
+    result = await db.execute(
+        select(AIReviewResult)
+        .where(AIReviewResult.dlc_application_id == application_id)
+        .order_by(AIReviewResult.created_at.desc())
+        .limit(1)
+    )
+    review = result.scalar_one_or_none()
+    if not review:
+        return {"review": None}
+
+    return {
+        "review": {
+            "id": str(review.id),
+            "score": review.score,
+            "verdict": review.verdict,
+            "issues": review.issues,
+            "enhanced_fields": review.enhanced_fields,
+            "compliance_flags": review.compliance_flags,
+            "summary": review.summary,
+            "model_used": review.model_used,
+            "tokens_used": review.tokens_used,
+            "latency_ms": review.latency_ms,
+            "error": review.error,
+            "created_at": review.created_at.isoformat(),
+        },
+    }
+
+
+@router.post("/dlc-queue/{application_id}/ai-enhance")
+async def apply_ai_enhancements(
+    application_id: uuid.UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Apply AI-suggested enhancements to a DLC application.
+
+    Body: {"accept_fields": ["description", "sample_messages"]} or {"accept_fields": "all"}
+    """
+    result = await db.execute(
+        select(DLCApplication).where(DLCApplication.id == application_id)
+    )
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Get latest AI review
+    review_result = await db.execute(
+        select(AIReviewResult)
+        .where(AIReviewResult.dlc_application_id == application_id, AIReviewResult.verdict != "ERROR")
+        .order_by(AIReviewResult.created_at.desc())
+        .limit(1)
+    )
+    review = review_result.scalar_one_or_none()
+    if not review or not review.enhanced_fields:
+        raise HTTPException(status_code=400, detail="No AI enhancements available")
+
+    accept = body.get("accept_fields", [])
+    enhanced = review.enhanced_fields
+
+    updated_form = dict(app.form_data)  # copy
+    fields_applied = []
+
+    if accept == "all":
+        for field, value in enhanced.items():
+            updated_form[field] = value
+            fields_applied.append(field)
+    elif isinstance(accept, list):
+        for field in accept:
+            if field in enhanced:
+                updated_form[field] = enhanced[field]
+                fields_applied.append(field)
+
+    app.form_data = updated_form
+
+    # Audit log
+    audit = AuditLog(
+        tenant_id=app.tenant_id,
+        user_id=user.id,
+        action="dlc_ai_enhancement_applied",
+        resource_type="dlc_application",
+        resource_id=str(app.id),
+        details={"fields_applied": fields_applied, "review_id": str(review.id)},
+    )
+    db.add(audit)
+    await db.commit()
+
+    return {
+        "message": f"Applied AI enhancements to {len(fields_applied)} fields",
+        "fields_applied": fields_applied,
+        "updated_form_data": updated_form,
     }
 
 
@@ -971,4 +1485,166 @@ async def review_dlc_application(
     return {
         "message": f"Application {app.status}",
         "application": DLCApplicationResponse.model_validate(app).model_dump(mode="json"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Admin User Management
+# ---------------------------------------------------------------------------
+
+@router.get("/users")
+async def list_all_users(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    search: str | None = None,
+    role: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """List all users across all tenants."""
+    filters = []
+    if search:
+        filters.append(
+            or_(
+                User.email.ilike(f"%{search}%"),
+                User.first_name.ilike(f"%{search}%"),
+                User.last_name.ilike(f"%{search}%"),
+            )
+        )
+    if role:
+        filters.append(User.role == role)
+
+    total = (await db.execute(select(func.count(User.id)).where(*filters))).scalar() or 0 if filters else (await db.execute(select(func.count(User.id)))).scalar() or 0
+
+    q = select(User).order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    if filters:
+        q = q.where(*filters)
+    result = await db.execute(q)
+    users_list = result.scalars().all()
+
+    # Get tenant names
+    tenant_ids = list({u.tenant_id for u in users_list if u.tenant_id})
+    tenant_names = {}
+    if tenant_ids:
+        tn_result = await db.execute(select(Tenant.id, Tenant.name).where(Tenant.id.in_(tenant_ids)))
+        tenant_names = {row[0]: row[1] for row in tn_result.all()}
+
+    return {
+        "users": [
+            {
+                "id": str(u.id),
+                "email": u.email,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "role": u.role,
+                "is_active": u.is_active,
+                "is_superadmin": u.is_superadmin,
+                "tenant_id": str(u.tenant_id) if u.tenant_id else None,
+                "tenant_name": tenant_names.get(u.tenant_id, "\u2014"),
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+                "created_at": u.created_at.isoformat(),
+            }
+            for u in users_list
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+@router.put("/users/{user_id}")
+async def update_user_admin(
+    user_id: uuid.UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_superadmin()),
+):
+    """Update a user's role, active status, or superadmin flag."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    changes = {}
+    if "role" in body:
+        target.role = body["role"]
+        changes["role"] = body["role"]
+    if "is_active" in body:
+        target.is_active = body["is_active"]
+        changes["is_active"] = body["is_active"]
+    if "is_superadmin" in body:
+        # Prevent self-demotion
+        if target.id == admin.id and not body["is_superadmin"]:
+            raise HTTPException(status_code=400, detail="Cannot revoke your own superadmin access")
+        target.is_superadmin = body["is_superadmin"]
+        changes["is_superadmin"] = body["is_superadmin"]
+
+    audit = AuditLog(
+        tenant_id=target.tenant_id,
+        user_id=admin.id,
+        action="user_updated_by_admin",
+        resource_type="user",
+        resource_id=str(target.id),
+        details=changes,
+    )
+    db.add(audit)
+    await db.commit()
+
+    return {"message": "User updated", "changes": changes}
+
+
+# ---------------------------------------------------------------------------
+# Audit Log Viewer
+# ---------------------------------------------------------------------------
+
+@router.get("/audit-log")
+async def list_audit_logs(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    action: str | None = None,
+    resource_type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_superadmin()),
+):
+    """Browse the audit log."""
+    filters = []
+    if action:
+        filters.append(AuditLog.action == action)
+    if resource_type:
+        filters.append(AuditLog.resource_type == resource_type)
+
+    count_q = select(func.count(AuditLog.id))
+    if filters:
+        count_q = count_q.where(*filters)
+    total = (await db.execute(count_q)).scalar() or 0
+
+    q = select(AuditLog).order_by(AuditLog.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    if filters:
+        q = q.where(*filters)
+    result = await db.execute(q)
+    logs = result.scalars().all()
+
+    user_ids = list({l.user_id for l in logs if l.user_id})
+    user_emails = {}
+    if user_ids:
+        ue_result = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
+        user_emails = {row[0]: row[1] for row in ue_result.all()}
+
+    return {
+        "logs": [
+            {
+                "id": str(l.id),
+                "action": l.action,
+                "resource_type": l.resource_type,
+                "resource_id": l.resource_id,
+                "user_email": user_emails.get(l.user_id, "system"),
+                "details": l.details,
+                "ip_address": l.ip_address,
+                "created_at": l.created_at.isoformat(),
+            }
+            for l in logs
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
     }

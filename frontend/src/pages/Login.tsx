@@ -20,12 +20,13 @@ export default function Login() {
     setIsLoading(true);
     try {
       const res = await api.post("/auth/login", { email, password });
-      setToken(res.data.token ?? "authenticated");
+      setToken(res.data.access_token ?? "authenticated");
       setUser(res.data.user ?? null);
       toast.success("Signed in successfully");
       navigate("/");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "Login failed. Please try again.";
+      const errData = (err as { response?: { data?: { detail?: string; message?: string } } })?.response?.data;
+      const msg = errData?.detail ?? errData?.message ?? "Login failed. Please try again.";
       toast.error(msg);
     } finally {
       setIsLoading(false);

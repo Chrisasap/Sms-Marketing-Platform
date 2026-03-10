@@ -7,7 +7,7 @@ import api from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 
 export default function Register() {
-  const [form, setForm] = useState({ firstName: "", lastName: "", company: "", email: "", password: "" });
+  const [form, setForm] = useState({ first_name: "", last_name: "", company_name: "", email: "", password: "" });
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { setUser, setToken } = useAuthStore();
@@ -20,13 +20,16 @@ export default function Register() {
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const res = await api.post("/auth/register", form);
-      setToken(res.data.token ?? "authenticated");
-      setUser(res.data.user ?? null);
+      await api.post("/auth/register", form);
+      // Auto-login after successful registration
+      const loginRes = await api.post("/auth/login", { email: form.email, password: form.password });
+      setToken(loginRes.data.access_token ?? "authenticated");
+      setUser(loginRes.data.user ?? null);
       toast.success("Account created successfully");
       navigate("/");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "Registration failed. Please try again.";
+      const errData = (err as { response?: { data?: { detail?: string; message?: string } } })?.response?.data;
+      const msg = errData?.detail ?? errData?.message ?? "Registration failed. Please try again.";
       toast.error(msg);
     } finally {
       setIsLoading(false);
@@ -52,15 +55,15 @@ export default function Register() {
             <div className="grid grid-cols-2 gap-4">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input type="text" placeholder="First name" value={form.firstName} onChange={update("firstName")} className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                <input type="text" placeholder="First name" value={form.first_name} onChange={update("first_name")} className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
               </div>
               <div>
-                <input type="text" placeholder="Last name" value={form.lastName} onChange={update("lastName")} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                <input type="text" placeholder="Last name" value={form.last_name} onChange={update("last_name")} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
               </div>
             </div>
             <div className="relative">
               <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <input type="text" placeholder="Company name" value={form.company} onChange={update("company")} className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+              <input type="text" placeholder="Company name" value={form.company_name} onChange={update("company_name")} className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
             </div>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
